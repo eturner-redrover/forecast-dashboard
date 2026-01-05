@@ -1,5 +1,138 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from 'recharts';
+import html2canvas from 'html2canvas';
+
+// Simple hash function for password verification
+// To change the password, update this hash. Generate a new hash by running in browser console:
+// btoa('yourpassword') 
+const PASSWORD_HASH = 'Zm9yZWNhc3QyMDI1'; // This is 'forecast2025' encoded
+
+// Embed mode secret key - use this in URL: ?embed=true&key=redrover2025
+const EMBED_KEY = 'cmVkcm92ZXIyMDI1'; // This is 'redrover2025' encoded
+
+// Check if we're in embed mode
+const getEmbedMode = () => {
+  const params = new URLSearchParams(window.location.search);
+  const isEmbed = params.get('embed') === 'true';
+  const key = params.get('key') || '';
+  const isValidKey = btoa(key) === EMBED_KEY;
+  return isEmbed && isValidKey;
+};
+
+const isEmbedMode = getEmbedMode();
+
+const LoginScreen = ({ onLogin }) => {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (btoa(password) === PASSWORD_HASH) {
+      sessionStorage.setItem('forecast_auth', 'true');
+      onLogin();
+    } else {
+      setError('Incorrect password');
+      setPassword('');
+    }
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(180deg, #faf9f7 0%, #f5f3f0 100%)',
+      fontFamily: "'DM Sans', sans-serif",
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '48px'
+    }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+      
+      <div style={{
+        background: 'white',
+        borderRadius: '24px',
+        padding: '48px',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+        maxWidth: '400px',
+        width: '100%',
+        textAlign: 'center'
+      }}>
+        <h1 style={{
+          fontFamily: "'Playfair Display', serif",
+          fontSize: '32px',
+          fontWeight: 700,
+          color: '#1a1a1a',
+          margin: 0,
+          letterSpacing: '-1px'
+        }}>
+          Sales Forecasting
+        </h1>
+        <p style={{
+          fontSize: '14px',
+          color: '#666',
+          marginTop: '8px',
+          letterSpacing: '2px',
+          textTransform: 'uppercase',
+          fontWeight: 500
+        }}>
+          Dashboard Access
+        </p>
+        <div style={{
+          width: '40px',
+          height: '3px',
+          background: 'linear-gradient(90deg, #ff5555, #3574e3, #ffcc01)',
+          margin: '24px auto'
+        }} />
+        
+        <form onSubmit={handleSubmit}>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter password"
+            style={{
+              width: '100%',
+              padding: '16px 20px',
+              fontSize: '16px',
+              border: '2px solid #e0e0e0',
+              borderRadius: '12px',
+              outline: 'none',
+              fontFamily: "'DM Sans', sans-serif",
+              marginBottom: '16px',
+              boxSizing: 'border-box',
+              transition: 'border-color 0.2s ease'
+            }}
+            onFocus={(e) => e.target.style.borderColor = '#3574e3'}
+            onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
+          />
+          {error && (
+            <p style={{ color: '#ff5555', fontSize: '14px', margin: '0 0 16px 0' }}>{error}</p>
+          )}
+          <button
+            type="submit"
+            style={{
+              width: '100%',
+              padding: '16px 24px',
+              fontSize: '16px',
+              fontWeight: 600,
+              color: 'white',
+              background: '#1a1a1a',
+              border: 'none',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              fontFamily: "'DM Sans', sans-serif",
+              transition: 'background 0.2s ease'
+            }}
+            onMouseOver={(e) => e.target.style.background = '#333'}
+            onMouseOut={(e) => e.target.style.background = '#1a1a1a'}
+          >
+            Access Dashboard
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 const forecasters = ['Jeremy', 'Rachel', 'Carolyn', 'Dani', 'Eric'];
 const colors = {
@@ -11,7 +144,105 @@ const colors = {
   Actual: '#1a1a1a'
 };
 
-const rawData = [
+// Google Sheets CSV URL
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRoUeMCDZyhjrYM9LYVHIPeylW5gYokJA0-4OnyJiqK4u2pjNqG2JzcUby7FXzTNmpnsKGV6IKV0p4Q/pub?gid=0&single=true&output=csv';
+
+// Parse CSV text into array of objects (handles quoted fields with commas)
+const parseCSV = (csvText) => {
+  const lines = csvText.trim().split('\n');
+  
+  // Parse a single CSV line, handling quoted fields
+  const parseLine = (line) => {
+    const values = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+    return values;
+  };
+  
+  const headers = parseLine(lines[0]);
+  
+  return lines.slice(1).map(line => {
+    const values = parseLine(line);
+    const row = {};
+    headers.forEach((header, i) => {
+      row[header] = values[i] || '';
+    });
+    return row;
+  });
+};
+
+// Transform CSV data into the format expected by the dashboard
+const transformData = (csvData) => {
+  return csvData.map(row => {
+    const parseNum = (val) => {
+      if (!val || val === '' || val === 'null') return null;
+      // Remove commas, quotes, dollar signs, and spaces
+      const cleaned = val.replace(/[,$"\s]/g, '');
+      const num = parseFloat(cleaned);
+      return isNaN(num) ? null : num;
+    };
+    
+    // Parse date - convert "10/10/2025" to "10/10" for display
+    const parseDate = (val) => {
+      if (!val) return '';
+      const parts = val.split('/');
+      if (parts.length >= 2) {
+        return `${parts[0]}/${parts[1]}`; // Just month/day
+      }
+      return val;
+    };
+    
+    return {
+      date: parseDate(row.date || row.Date),
+      Jeremy: {
+        month: parseNum(row.Jeremy_month),
+        quarter: parseNum(row.Jeremy_quarter),
+        year: parseNum(row.Jeremy_year)
+      },
+      Rachel: {
+        month: parseNum(row.Rachel_month),
+        quarter: parseNum(row.Rachel_quarter),
+        year: parseNum(row.Rachel_year)
+      },
+      Carolyn: {
+        month: parseNum(row.Carolyn_month),
+        quarter: parseNum(row.Carolyn_quarter),
+        year: parseNum(row.Carolyn_year)
+      },
+      Dani: {
+        month: parseNum(row.Dani_month),
+        quarter: parseNum(row.Dani_quarter),
+        year: parseNum(row.Dani_year)
+      },
+      Eric: {
+        month: parseNum(row.Eric_month),
+        quarter: parseNum(row.Eric_quarter),
+        year: parseNum(row.Eric_year)
+      },
+      actual: {
+        month: parseNum(row.actual_month),
+        quarter: parseNum(row.actual_quarter),
+        year: parseNum(row.actual_year)
+      }
+    };
+  });
+};
+
+// Fallback data in case sheet is unavailable
+const fallbackData = [
   { date: '10/10', Jeremy: { month: 400000, quarter: 1250000, year: 13000000 }, Rachel: { month: 350000, quarter: 1100000, year: 12000000 }, Carolyn: { month: null, quarter: null, year: null }, Dani: { month: 330000, quarter: 1280000, year: 13100000 }, Eric: { month: 340000, quarter: 1200000, year: 11300000 }, actual: { month: null, quarter: null, year: null } },
   { date: '10/17', Jeremy: { month: 400000, quarter: 1250000, year: 13000000 }, Rachel: { month: 375000, quarter: 1000000, year: 12000000 }, Carolyn: { month: 465000, quarter: 750000, year: 12000000 }, Dani: { month: 345000, quarter: 1280000, year: 13100000 }, Eric: { month: 340000, quarter: 1000000, year: 11500000 }, actual: { month: null, quarter: null, year: null } },
   { date: '10/24', Jeremy: { month: 425000, quarter: 1250000, year: 13000000 }, Rachel: { month: null, quarter: null, year: null }, Carolyn: { month: 418000, quarter: 1100000, year: 13000000 }, Dani: { month: 395000, quarter: 1260000, year: 13100000 }, Eric: { month: 350000, quarter: 1000000, year: 11500000 }, actual: { month: null, quarter: null, year: null } },
@@ -31,6 +262,125 @@ const formatCurrency = (value) => {
 const formatFullCurrency = (value) => {
   if (value === null || value === undefined) return '';
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
+};
+
+// Chart wrapper with download button on hover
+const ChartWrapper = ({ children, filename }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const chartRef = useRef(null);
+
+  const handleDownload = async () => {
+    if (!chartRef.current) return;
+    
+    try {
+      // Get the actual dimensions of the element
+      const element = chartRef.current;
+      const rect = element.getBoundingClientRect();
+      
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#ffffff',
+        scale: 2, // Higher resolution
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        width: rect.width,
+        height: rect.height,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: rect.width,
+        windowHeight: rect.height,
+        x: 0,
+        y: 0,
+        foreignObjectRendering: false,
+        removeContainer: true,
+      });
+      
+      // Create rounded corners on the canvas
+      const roundedCanvas = document.createElement('canvas');
+      const ctx = roundedCanvas.getContext('2d');
+      const radius = 48; // Match the 24px border radius * 2 for scale
+      
+      roundedCanvas.width = canvas.width;
+      roundedCanvas.height = canvas.height;
+      
+      // Draw rounded rectangle path
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(canvas.width - radius, 0);
+      ctx.quadraticCurveTo(canvas.width, 0, canvas.width, radius);
+      ctx.lineTo(canvas.width, canvas.height - radius);
+      ctx.quadraticCurveTo(canvas.width, canvas.height, canvas.width - radius, canvas.height);
+      ctx.lineTo(radius, canvas.height);
+      ctx.quadraticCurveTo(0, canvas.height, 0, canvas.height - radius);
+      ctx.lineTo(0, radius);
+      ctx.quadraticCurveTo(0, 0, radius, 0);
+      ctx.closePath();
+      ctx.clip();
+      
+      // Draw the original canvas onto the rounded one
+      ctx.drawImage(canvas, 0, 0);
+      
+      // Download
+      const link = document.createElement('a');
+      link.download = `${filename || 'chart'}.png`;
+      link.href = roundedCanvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error('Failed to download chart:', err);
+    }
+  };
+
+  return (
+    <div 
+      style={{ position: 'relative', marginBottom: '32px' }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div ref={chartRef}>
+        {children}
+      </div>
+      {isHovered && (
+        <button
+          onClick={handleDownload}
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '16px',
+            background: 'rgba(255, 255, 255, 0.95)',
+            border: '1px solid #e0e0e0',
+            borderRadius: '8px',
+            padding: '8px 12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '13px',
+            fontFamily: "'DM Sans', sans-serif",
+            fontWeight: 500,
+            color: '#1a1a1a',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            transition: 'all 0.2s ease',
+            zIndex: 10
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = '#FFCC01';
+            e.currentTarget.style.borderColor = '#FFCC01';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.95)';
+            e.currentTarget.style.borderColor = '#e0e0e0';
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download
+        </button>
+      )}
+    </div>
+  );
 };
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -86,9 +436,79 @@ const AccuracyTooltip = ({ active, payload }) => {
 };
 
 export default function ForecastingDashboard() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    // Auto-authenticate if in valid embed mode
+    if (isEmbedMode) return true;
+    return sessionStorage.getItem('forecast_auth') === 'true';
+  });
   const [view, setView] = useState('month');
-  const [chartType, setChartType] = useState('trends');
   const [selectedPeriod, setSelectedPeriod] = useState('all');
+  const [rawData, setRawData] = useState(fallbackData);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch data from Google Sheets
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch(SHEET_URL);
+        if (!response.ok) throw new Error('Failed to fetch data');
+        const csvText = await response.text();
+        const parsedData = parseCSV(csvText);
+        const transformedData = transformData(parsedData);
+        if (transformedData.length > 0) {
+          setRawData(transformedData);
+        }
+      } catch (error) {
+        console.error('Error fetching sheet data:', error);
+        // Keep using fallback data
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    if (isAuthenticated) {
+      fetchData();
+    }
+  }, [isAuthenticated]);
+
+  // Reset selected period when view changes - must be before conditional return
+  useEffect(() => {
+    setSelectedPeriod('all');
+  }, [view]);
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
+  }
+
+  // Show loading screen while fetching data
+  if (isLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #faf9f7 0%, #f5f3f0 100%)',
+        fontFamily: "'DM Sans', sans-serif",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #e0e0e0',
+            borderTopColor: '#3574e3',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <p style={{ color: '#666', fontSize: '14px' }}>Loading forecast data...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Get available periods with actuals for each view type
   const getAvailablePeriods = () => {
@@ -98,12 +518,27 @@ export default function ForecastingDashboard() {
       year: []
     };
     
+    // Helper to get fiscal quarter from month (Oct=Q1, Jan=Q2, Apr=Q3, Jul=Q4)
+    const getFiscalQuarter = (month) => {
+      const m = parseInt(month);
+      if (m >= 10 && m <= 12) return 'Q1';
+      if (m >= 1 && m <= 3) return 'Q2';
+      if (m >= 4 && m <= 6) return 'Q3';
+      return 'Q4';
+    };
+    
     rawData.forEach(row => {
       if (row.actual.month !== null) {
         periods.month.push({ date: row.date, value: row.actual.month });
       }
       if (row.actual.quarter !== null) {
-        periods.quarter.push({ date: row.date, value: row.actual.quarter });
+        // Get the quarter name from the date
+        const month = row.date.split('/')[0];
+        const quarterName = getFiscalQuarter(month);
+        // Only add if not already in the list
+        if (!periods.quarter.find(q => q.date === quarterName)) {
+          periods.quarter.push({ date: quarterName, value: row.actual.quarter });
+        }
       }
       if (row.actual.year !== null) {
         periods.year.push({ date: row.date, value: row.actual.year });
@@ -113,60 +548,141 @@ export default function ForecastingDashboard() {
     return periods;
   };
 
+  // Helper to check if a date falls within a fiscal quarter
+  const isDateInQuarter = (date, quarter) => {
+    const month = parseInt(date.split('/')[0]);
+    if (quarter === 'Q1') return month >= 10 && month <= 12;
+    if (quarter === 'Q2') return month >= 1 && month <= 3;
+    if (quarter === 'Q3') return month >= 4 && month <= 6;
+    if (quarter === 'Q4') return month >= 7 && month <= 9;
+    return false;
+  };
+
   const availablePeriods = getAvailablePeriods();
 
-  // Reset selected period when view changes
-  React.useEffect(() => {
-    setSelectedPeriod('all');
-  }, [view]);
-
   const getChartData = () => {
-    return rawData.map(row => {
-      const point = { date: row.date };
-      forecasters.forEach(name => {
-        if (row[name] && row[name][view] !== null) {
-          point[name] = row[name][view];
+    return rawData
+      .filter(row => {
+        // For quarter view with a specific quarter selected, filter to that quarter's months
+        if (view === 'quarter' && selectedPeriod !== 'all') {
+          return isDateInQuarter(row.date, selectedPeriod);
         }
+        return true;
+      })
+      .map(row => {
+        const point = { date: row.date };
+        forecasters.forEach(name => {
+          if (row[name] && row[name][view] !== null) {
+            point[name] = row[name][view];
+          }
+        });
+        if (row.actual && row.actual[view] !== null) {
+          point['Actual'] = row.actual[view];
+        }
+        return point;
       });
-      if (row.actual && row.actual[view] !== null) {
-        point['Actual'] = row.actual[view];
-      }
-      return point;
-    });
   };
 
   const getAccuracyData = () => {
+    // Group forecasts by period (month) - dates starting with same month go together
+    const getMonthFromDate = (date) => date.split('/')[0];
+    
+    // Find all unique months that have actuals
+    const monthsWithActuals = {};
+    rawData.forEach(row => {
+      if (row.actual.month !== null) {
+        const month = getMonthFromDate(row.date);
+        monthsWithActuals[month] = row.actual.month;
+      }
+    });
+    
     return forecasters.map(name => {
       let totalDeviation = 0;
       let count = 0;
       
       if (view === 'overall') {
         // Calculate across all periods that have actuals
-        ['month', 'quarter', 'year'].forEach(period => {
-          const periodActuals = rawData.filter(r => r.actual[period] !== null);
-          periodActuals.forEach(row => {
-            const guess = row[name]?.[period];
-            const actual = row.actual[period];
-            if (guess !== null && guess !== undefined && actual) {
-              totalDeviation += ((guess - actual) / actual) * 100;
+        // Monthly forecasts - compare each week to its month's actual
+        rawData.forEach(row => {
+          const forecastMonth = getMonthFromDate(row.date);
+          const actualForMonth = monthsWithActuals[forecastMonth];
+          if (actualForMonth !== undefined) {
+            const guess = row[name]?.month;
+            if (guess !== null && guess !== undefined) {
+              totalDeviation += ((guess - actualForMonth) / actualForMonth) * 100;
+              count++;
+            }
+          }
+        });
+        
+        // Quarter forecasts
+        const quarterActual = rawData.find(r => r.actual.quarter !== null)?.actual.quarter;
+        if (quarterActual) {
+          rawData.forEach(row => {
+            const guess = row[name]?.quarter;
+            if (guess !== null && guess !== undefined) {
+              totalDeviation += ((guess - quarterActual) / quarterActual) * 100;
               count++;
             }
           });
-        });
-      } else {
-        // Filter by selected period or all periods with actuals
-        const viewActuals = selectedPeriod === 'all' 
-          ? rawData.filter(r => r.actual[view] !== null)
-          : rawData.filter(r => r.actual[view] !== null && r.date === selectedPeriod);
+        }
+        
+        // Year forecasts
+        const yearActual = rawData.find(r => r.actual.year !== null)?.actual.year;
+        if (yearActual) {
+          rawData.forEach(row => {
+            const guess = row[name]?.year;
+            if (guess !== null && guess !== undefined) {
+              totalDeviation += ((guess - yearActual) / yearActual) * 100;
+              count++;
+            }
+          });
+        }
+      } else if (view === 'month') {
+        // For monthly view, compare each forecast to its corresponding month's actual
+        // Filter by period if selected
+        const targetMonth = selectedPeriod !== 'all' ? getMonthFromDate(selectedPeriod) : null;
+        
+        rawData.forEach(row => {
+          const forecastMonth = getMonthFromDate(row.date);
+          const actualForMonth = monthsWithActuals[forecastMonth];
           
-        viewActuals.forEach(row => {
-          const guess = row[name]?.[view];
-          const actual = row.actual[view];
-          if (guess !== null && guess !== undefined && actual) {
-            totalDeviation += ((guess - actual) / actual) * 100;
-            count++;
+          // Skip if filtering to a specific period and this isn't in that month
+          if (targetMonth && forecastMonth !== targetMonth) return;
+          
+          if (actualForMonth !== undefined) {
+            const guess = row[name]?.month;
+            if (guess !== null && guess !== undefined) {
+              totalDeviation += ((guess - actualForMonth) / actualForMonth) * 100;
+              count++;
+            }
           }
         });
+      } else if (view === 'quarter') {
+        const quarterActual = rawData.find(r => r.actual.quarter !== null)?.actual.quarter;
+        if (quarterActual) {
+          rawData.forEach(row => {
+            // Filter by selected quarter if not 'all'
+            if (selectedPeriod !== 'all' && !isDateInQuarter(row.date, selectedPeriod)) return;
+            
+            const guess = row[name]?.quarter;
+            if (guess !== null && guess !== undefined) {
+              totalDeviation += ((guess - quarterActual) / quarterActual) * 100;
+              count++;
+            }
+          });
+        }
+      } else if (view === 'year') {
+        const yearActual = rawData.find(r => r.actual.year !== null)?.actual.year;
+        if (yearActual) {
+          rawData.forEach(row => {
+            const guess = row[name]?.year;
+            if (guess !== null && guess !== undefined) {
+              totalDeviation += ((guess - yearActual) / yearActual) * 100;
+              count++;
+            }
+          });
+        }
       }
       
       return {
@@ -179,6 +695,41 @@ export default function ForecastingDashboard() {
 
   const chartData = getChartData();
   const accuracyData = getAccuracyData();
+
+  // Calculate Y-axis domain to "zoom in" on the data range
+  const getYAxisDomain = () => {
+    const values = [];
+    chartData.forEach(point => {
+      forecasters.forEach(name => {
+        if (point[name] !== undefined && point[name] !== null) {
+          values.push(point[name]);
+        }
+      });
+      if (point['Actual'] !== undefined && point['Actual'] !== null) {
+        values.push(point['Actual']);
+      }
+    });
+    
+    if (values.length === 0) return [0, 'auto'];
+    
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    const padding = range * 0.1; // 10% padding
+    
+    // Round to nice numbers based on magnitude
+    const magnitude = Math.pow(10, Math.floor(Math.log10(range)));
+    const niceMin = Math.floor((min - padding) / magnitude) * magnitude;
+    const niceMax = Math.ceil((max + padding) / magnitude) * magnitude;
+    
+    // Only zoom in if the range is less than 50% of max (otherwise show from 0)
+    if (niceMin > max * 0.5) {
+      return [Math.max(0, niceMin), niceMax];
+    }
+    return [0, 'auto'];
+  };
+
+  const yAxisDomain = getYAxisDomain();
 
   // Cumulative error calculation (golf style - lower is better)
   // For each week with a forecast, calculate how far off from the actual result
@@ -242,6 +793,9 @@ export default function ForecastingDashboard() {
         const quarterActual = rawData.find(r => r.actual.quarter !== null)?.actual.quarter;
         if (quarterActual) {
           rawData.forEach(row => {
+            // Filter by selected quarter if not 'all'
+            if (selectedPeriod !== 'all' && !isDateInQuarter(row.date, selectedPeriod)) return;
+            
             const guess = row[name]?.quarter;
             if (guess !== null && guess !== undefined) {
               cumError += Math.abs(guess - quarterActual);
@@ -296,15 +850,16 @@ export default function ForecastingDashboard() {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: isEmbedMode ? 'auto' : '100vh',
       background: 'linear-gradient(180deg, #faf9f7 0%, #f5f3f0 100%)',
       fontFamily: "'DM Sans', sans-serif",
-      padding: '48px'
+      padding: isEmbedMode ? '24px' : '48px'
     }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
       
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        {/* Header */}
+        {/* Header - hidden in embed mode */}
+        {!isEmbedMode && (
         <div style={{ marginBottom: '48px', textAlign: 'center' }}>
           <h1 style={{
             fontFamily: "'Playfair Display', serif",
@@ -334,6 +889,7 @@ export default function ForecastingDashboard() {
             margin: '24px auto 0'
           }} />
         </div>
+        )}
 
         {/* Controls */}
         <div style={{
@@ -350,7 +906,7 @@ export default function ForecastingDashboard() {
             padding: '6px',
             boxShadow: '0 2px 12px rgba(0,0,0,0.06)'
           }}>
-            {['month', 'quarter', 'year', 'overall'].filter(v => chartType !== 'trends' || v !== 'overall').map(v => (
+            {['month', 'quarter', 'year'].map(v => (
               <button
                 key={v}
                 onClick={() => setView(v)}
@@ -372,38 +928,9 @@ export default function ForecastingDashboard() {
               </button>
             ))}
           </div>
-          
-          <div style={{
-            display: 'flex',
-            background: 'white',
-            borderRadius: '12px',
-            padding: '6px',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.06)'
-          }}>
-            {[['trends', 'Forecast Trends'], ['accuracy', 'Accuracy'], ['cumulative', 'Cumulative Error']].map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setChartType(key)}
-                style={{
-                  padding: '12px 24px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  background: chartType === key ? '#3574e3' : 'transparent',
-                  color: chartType === key ? 'white' : '#666',
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
 
-          {/* Period Selector - only show for accuracy/cumulative views and non-overall */}
-          {(chartType === 'accuracy' || chartType === 'cumulative') && view !== 'overall' && availablePeriods[view].length > 0 && (
+          {/* Period Selector - show when there are periods with actuals */}
+          {availablePeriods[view].length > 0 && (
             <div style={{
               display: 'flex',
               background: 'white',
@@ -452,211 +979,248 @@ export default function ForecastingDashboard() {
           )}
         </div>
 
-        {/* Main Chart */}
+
+        {/* Forecast Trends Chart */}
+        <ChartWrapper filename={`${viewLabels[view]}-forecast-trends-${new Date().toISOString().split('T')[0]}`}>
         <div style={{
           background: 'white',
           borderRadius: '24px',
           padding: '40px',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.06)'
+        }}>
+          <div style={{ marginBottom: '32px' }}>
+            <h2 style={{
+              fontFamily: "'Playfair Display', serif",
+              fontSize: '28px',
+              fontWeight: 600,
+              color: '#1a1a1a',
+              margin: 0
+            }}>
+              {viewLabels[view]} Forecast Evolution
+            </h2>
+            <p style={{ color: '#888', marginTop: '8px', fontSize: '14px' }}>
+              How predictions evolved week over week
+            </p>
+          </div>
+
+          <ResponsiveContainer width="100%" height={450}>
+            <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <defs>
+                {Object.entries(colors).map(([name, color]) => (
+                  <linearGradient key={name} id={`gradient-${name}`} x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor={color} stopOpacity={0.8} />
+                    <stop offset="100%" stopColor={color} stopOpacity={1} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis 
+                dataKey="date" 
+                tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}
+                axisLine={{ stroke: '#e0e0e0' }}
+                tickLine={false}
+              />
+              <YAxis 
+                tickFormatter={formatCurrency}
+                tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Mono', monospace" }}
+                axisLine={false}
+                tickLine={false}
+                width={80}
+                domain={yAxisDomain}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend 
+                wrapperStyle={{ 
+                  paddingTop: '24px',
+                  fontFamily: "'DM Sans', sans-serif"
+                }}
+                iconType="circle"
+              />
+              {forecasters.map(name => (
+                <Line
+                  key={name}
+                  type="monotone"
+                  dataKey={name}
+                  stroke={colors[name]}
+                  strokeWidth={2.5}
+                  dot={{ fill: colors[name], strokeWidth: 0, r: 4 }}
+                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  connectNulls={false}
+                />
+              ))}
+              <Line
+                type="monotone"
+                dataKey="Actual"
+                stroke={colors.Actual}
+                strokeWidth={4}
+                strokeDasharray="8 4"
+                dot={{ fill: colors.Actual, strokeWidth: 2, stroke: 'white', r: 6 }}
+                activeDot={{ r: 8, strokeWidth: 2, stroke: 'white' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        </ChartWrapper>
+
+        {/* Accuracy and Cumulative Error - Side by Side */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))',
+          gap: '24px',
           marginBottom: '32px'
         }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'flex-start',
-            marginBottom: '32px'
+          {/* Accuracy Chart */}
+          <ChartWrapper filename={`accuracy-${viewLabels[view]}-${new Date().toISOString().split('T')[0]}`}>
+          <div style={{
+            background: 'white',
+            borderRadius: '24px',
+            padding: '32px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+            height: '100%',
+            boxSizing: 'border-box'
           }}>
-            <div>
+            <div style={{ marginBottom: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h2 style={{
+                <h3 style={{
                   fontFamily: "'Playfair Display', serif",
-                  fontSize: '28px',
+                  fontSize: '22px',
                   fontWeight: 600,
                   color: '#1a1a1a',
                   margin: 0
                 }}>
-                  {chartType === 'trends' ? `${viewLabels[view]} Forecast Evolution` : chartType === 'accuracy' ? 'Forecaster Accuracy' : 'Cumulative Error'}
-                </h2>
-                {chartType === 'accuracy' && (
-                  <span style={{ position: 'relative', display: 'inline-block' }}>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        width: 20,
-                        height: 20,
-                        borderRadius: '50%',
-                        background: '#3574e3',
-                        color: 'white',
-                        textAlign: 'center',
-                        fontWeight: 700,
-                        fontSize: 16,
-                        lineHeight: '20px',
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(53,116,227,0.12)'
-                      }}
-                      title={
-                        'Deviation is calculated as the average percent difference between each forecaster’s guess and the actual result, across all months with actuals. Formula: ((guess - actual) / actual) × 100. Positive means over-forecast, negative means under-forecast.'
-                      }
-                    >i</span>
-                  </span>
-                )}
-                {chartType === 'cumulative' && (
-                  <span style={{ position: 'relative', display: 'inline-block' }}>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        width: 20,
-                        height: 20,
-                        borderRadius: '50%',
-                        background: '#ffcc01',
-                        color: '#1a1a1a',
-                        textAlign: 'center',
-                        fontWeight: 700,
-                        fontSize: 16,
-                        lineHeight: '20px',
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(255,204,1,0.12)'
-                      }}
-                      title={
-                        'Cumulative error is the sum of the absolute differences between each forecaster’s guess and the actual result, for all months with actuals. Formula: SUMPRODUCT((guess<>0)*ABS(guess-actual)).'
-                      }
-                    >i</span>
-                  </span>
-                )}
+                  Forecaster Accuracy
+                </h3>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    background: '#3574e3',
+                    color: 'white',
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    lineHeight: '18px',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(53,116,227,0.12)'
+                  }}
+                  title={'Deviation is calculated as the average percent difference between each forecaster\'s guess and the actual result. Formula: ((guess - actual) / actual) × 100. Positive means over-forecast, negative means under-forecast.'}
+                >i</span>
               </div>
-              <p style={{ color: '#888', marginTop: '8px', fontSize: '14px' }}>
-                {chartType === 'trends' 
-                  ? 'How predictions evolved week over week'
-                  : chartType === 'accuracy' 
-                    ? 'Average deviation from actual month-end results'
-                    : 'Total absolute error from actuals'}
+              <p style={{ color: '#888', marginTop: '6px', fontSize: '13px' }}>
+                Average deviation from actual results
               </p>
             </div>
+
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={accuracyData} layout="vertical" margin={{ top: 10, right: 50, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={true} vertical={false} />
+                <XAxis 
+                  type="number"
+                  tick={{ fill: '#888', fontSize: 11, fontFamily: "'DM Mono', monospace" }}
+                  axisLine={{ stroke: '#e0e0e0' }}
+                  tickLine={false}
+                  tickFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(0)}%`}
+                  domain={['dataMin - 2', 'dataMax + 2']}
+                />
+                <YAxis 
+                  dataKey="name"
+                  type="category"
+                  tick={{ fill: '#1a1a1a', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={80}
+                />
+                <Tooltip content={<AccuracyTooltip />} />
+                <ReferenceLine x={0} stroke="#1a1a1a" strokeWidth={2} />
+                <Bar dataKey="accuracy" radius={[0, 6, 6, 0]} barSize={28}>
+                  {accuracyData.map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={entry.accuracy > 0 ? '#ff5555' : '#3574e3'}
+                      opacity={0.85}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
+          </ChartWrapper>
 
-          <div>
-            {chartType === 'trends' && (
-                <ResponsiveContainer width="100%" height={450}>
-                  <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                    <defs>
-                      {Object.entries(colors).map(([name, color]) => (
-                        <linearGradient key={name} id={`gradient-${name}`} x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor={color} stopOpacity={0.8} />
-                          <stop offset="100%" stopColor={color} stopOpacity={1} />
-                        </linearGradient>
-                      ))}
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                    <XAxis 
-                      dataKey="date" 
-                      tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      tickLine={false}
-                    />
-                    <YAxis 
-                      tickFormatter={formatCurrency}
-                      tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Mono', monospace" }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={80}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend 
-                      wrapperStyle={{ 
-                        paddingTop: '24px',
-                        fontFamily: "'DM Sans', sans-serif"
-                      }}
-                      iconType="circle"
-                    />
-                    {forecasters.map(name => (
-                      <Line
-                        key={name}
-                        type="monotone"
-                        dataKey={name}
-                        stroke={colors[name]}
-                        strokeWidth={2.5}
-                        dot={{ fill: colors[name], strokeWidth: 0, r: 4 }}
-                        activeDot={{ r: 6, strokeWidth: 0 }}
-                        connectNulls={false}
-                      />
-                    ))}
-                    <Line
-                      type="monotone"
-                      dataKey="Actual"
-                      stroke={colors.Actual}
-                      strokeWidth={4}
-                      strokeDasharray="8 4"
-                      dot={{ fill: colors.Actual, strokeWidth: 2, stroke: 'white', r: 6 }}
-                      activeDot={{ r: 8, strokeWidth: 2, stroke: 'white' }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-              {chartType === 'accuracy' && (
-                <ResponsiveContainer width="100%" height={450}>
-                  <BarChart data={accuracyData} layout="vertical" margin={{ top: 20, right: 60, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={true} vertical={false} />
-                    <XAxis 
-                      type="number"
-                      tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Mono', monospace" }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      tickLine={false}
-                      tickFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(0)}%`}
-                      domain={['dataMin - 2', 'dataMax + 2']}
-                    />
-                    <YAxis 
-                      dataKey="name"
-                      type="category"
-                      tick={{ fill: '#1a1a1a', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={100}
-                    />
-                    <Tooltip content={<AccuracyTooltip />} />
-                    <ReferenceLine x={0} stroke="#1a1a1a" strokeWidth={2} />
-                    <Bar dataKey="accuracy" radius={[0, 8, 8, 0]} barSize={36}>
-                      {accuracyData.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={entry.accuracy > 0 ? '#ff5555' : '#3574e3'}
-                          opacity={0.85}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-              {chartType === 'cumulative' && (
-                <ResponsiveContainer width="100%" height={450}>
-                  <BarChart data={cumulativeErrorData} layout="vertical" margin={{ top: 20, right: 60, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={true} vertical={false} />
-                    <XAxis 
-                      type="number"
-                      tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Mono', monospace" }}
-                      axisLine={{ stroke: '#e0e0e0' }}
-                      tickLine={false}
-                      tickFormatter={formatCurrency}
-                    />
-                    <YAxis 
-                      dataKey="name"
-                      type="category"
-                      tick={{ fill: '#1a1a1a', fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={100}
-                    />
-                    <Tooltip formatter={formatFullCurrency} />
-                    <Bar dataKey="error" radius={[0, 8, 8, 0]} barSize={36}>
-                      {cumulativeErrorData.map((entry, index) => (
-                        <Cell key={`cell-cumerr-${index}`} fill={entry.color} opacity={0.85} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
+          {/* Cumulative Error Chart */}
+          <ChartWrapper filename={`cumulative-error-${viewLabels[view]}-${new Date().toISOString().split('T')[0]}`}>
+          <div style={{
+            background: 'white',
+            borderRadius: '24px',
+            padding: '32px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+            height: '100%',
+            boxSizing: 'border-box'
+          }}>
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h3 style={{
+                  fontFamily: "'Playfair Display', serif",
+                  fontSize: '22px',
+                  fontWeight: 600,
+                  color: '#1a1a1a',
+                  margin: 0
+                }}>
+                  Cumulative Error
+                </h3>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    background: '#ffcc01',
+                    color: '#1a1a1a',
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    lineHeight: '18px',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(255,204,1,0.12)'
+                  }}
+                  title={'Cumulative error is the sum of the absolute differences between each forecaster\'s guess and the actual result. Lower is better (like golf). Formula: SUM(ABS(guess - actual)).'}
+                >i</span>
+              </div>
+              <p style={{ color: '#888', marginTop: '6px', fontSize: '13px' }}>
+                Total absolute error from actuals (lower is better)
+              </p>
             </div>
-        </div>
 
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={cumulativeErrorData} layout="vertical" margin={{ top: 10, right: 50, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={true} vertical={false} />
+                <XAxis 
+                  type="number"
+                  tick={{ fill: '#888', fontSize: 11, fontFamily: "'DM Mono', monospace" }}
+                  axisLine={{ stroke: '#e0e0e0' }}
+                  tickLine={false}
+                  tickFormatter={formatCurrency}
+                />
+                <YAxis 
+                  dataKey="name"
+                  type="category"
+                  tick={{ fill: '#1a1a1a', fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={80}
+                />
+                <Tooltip formatter={formatFullCurrency} />
+                <Bar dataKey="error" radius={[0, 6, 6, 0]} barSize={28}>
+                  {cumulativeErrorData.map((entry, index) => (
+                    <Cell key={`cell-cumerr-${index}`} fill={entry.color} opacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          </ChartWrapper>
+        </div>
         {/* Legend Card */}
         <div style={{
           background: 'white',
@@ -823,7 +1387,7 @@ export default function ForecastingDashboard() {
           fontSize: '13px'
         }}>
           <p style={{ margin: 0 }}>
-            Right-click any chart to copy image or export data. &nbsp;|&nbsp; Built with ❤️ by Eric Turner
+            Built with ❤️ by Eric Turner
           </p>
         </div>
       </div>

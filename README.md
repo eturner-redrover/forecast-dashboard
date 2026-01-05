@@ -68,3 +68,11 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 ### `npm run build` fails to minify
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+
+Give it a minute or two to propagate, then visit:
+
+https://eturner-redrover.github.io/forecast-dashboard
+
+The site should be live! If it doesn't work immediately, wait a couple minutes - GitHub Pages can take a moment to publish the first time.
+
+To update the site in the future, just run npm run deploy again after making changes.
