@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell, LabelList } from 'recharts';
 import html2canvas from 'html2canvas';
 
 // Simple hash function for password verification
@@ -254,9 +254,8 @@ const fallbackData = [
 
 const formatCurrency = (value) => {
   if (value === null || value === undefined) return '';
-  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
-  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
-  return `$${value}`;
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(3)}M`;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
 };
 
 const formatFullCurrency = (value) => {
@@ -435,6 +434,51 @@ const AccuracyTooltip = ({ active, payload }) => {
   return null;
 };
 
+// Custom label renderer for accuracy bars - puts negative values inside bar to avoid overlap
+const renderAccuracyLabel = (props) => {
+  const { x, y, width, height, value } = props;
+  const isNegative = value < 0;
+  const label = `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+  
+  if (isNegative) {
+    // For negative values, place inside the bar on the left
+    const padding = 8;
+    return (
+      <text
+        x={x + padding}
+        y={y + height / 2 + 5}
+        fill="#1a1a1a"
+        textAnchor="start"
+        dominantBaseline="middle"
+        fontSize={12}
+        fontWeight={600}
+        fontFamily="'DM Mono', monospace"
+        style={{ pointerEvents: 'none' }}
+      >
+        {label}
+      </text>
+    );
+  }
+  
+  // For positive values, place outside on the right
+  const padding = 8;
+  return (
+    <text
+      x={x + width + padding}
+      y={y + height / 2 + 5}
+      fill="#1a1a1a"
+      textAnchor="start"
+      dominantBaseline="middle"
+      fontSize={12}
+      fontWeight={600}
+      fontFamily="'DM Mono', monospace"
+      style={{ pointerEvents: 'none' }}
+    >
+      {label}
+    </text>
+  );
+};
+
 export default function ForecastingDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     // Auto-authenticate if in valid embed mode
@@ -527,9 +571,20 @@ export default function ForecastingDashboard() {
       return 'Q4';
     };
     
+    // Helper to get month abbreviation
+    const getMonthAbbr = (monthNum) => {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return months[parseInt(monthNum) - 1] || monthNum;
+    };
+    
     rawData.forEach(row => {
       if (row.actual.month !== null) {
-        periods.month.push({ date: row.date, value: row.actual.month });
+        const monthNum = row.date.split('/')[0];
+        const monthName = getMonthAbbr(monthNum);
+        // Only add if not already in the list (use month name as key)
+        if (!periods.month.find(m => m.date === monthName)) {
+          periods.month.push({ date: monthName, monthNum: monthNum, value: row.actual.month });
+        }
       }
       if (row.actual.quarter !== null) {
         // Get the quarter name from the date
@@ -640,8 +695,10 @@ export default function ForecastingDashboard() {
         }
       } else if (view === 'month') {
         // For monthly view, compare each forecast to its corresponding month's actual
-        // Filter by period if selected
-        const targetMonth = selectedPeriod !== 'all' ? getMonthFromDate(selectedPeriod) : null;
+        // Filter by period if selected (selectedPeriod is now a month abbreviation like "Oct")
+        const monthAbbrToNum = { 'Jan': '1', 'Feb': '2', 'Mar': '3', 'Apr': '4', 'May': '5', 'Jun': '6',
+                                  'Jul': '7', 'Aug': '8', 'Sep': '9', 'Oct': '10', 'Nov': '11', 'Dec': '12' };
+        const targetMonth = selectedPeriod !== 'all' ? monthAbbrToNum[selectedPeriod] : null;
         
         rawData.forEach(row => {
           const forecastMonth = getMonthFromDate(row.date);
@@ -814,11 +871,13 @@ export default function ForecastingDashboard() {
         }
       }
       
-      // Apply period filter if selected
+      // Apply period filter if selected (for monthly view with month abbreviation like "Oct")
       if (selectedPeriod !== 'all' && view === 'month') {
         cumError = 0;
-        const actualForPeriod = rawData.find(r => r.date === selectedPeriod)?.actual.month;
-        const periodMonth = getMonthFromDate(selectedPeriod);
+        const monthAbbrToNum = { 'Jan': '1', 'Feb': '2', 'Mar': '3', 'Apr': '4', 'May': '5', 'Jun': '6',
+                                  'Jul': '7', 'Aug': '8', 'Sep': '9', 'Oct': '10', 'Nov': '11', 'Dec': '12' };
+        const periodMonth = monthAbbrToNum[selectedPeriod];
+        const actualForPeriod = monthsWithActuals[periodMonth];
         
         if (actualForPeriod) {
           rawData.forEach(row => {
@@ -1134,7 +1193,7 @@ export default function ForecastingDashboard() {
                 />
                 <Tooltip content={<AccuracyTooltip />} />
                 <ReferenceLine x={0} stroke="#1a1a1a" strokeWidth={2} />
-                <Bar dataKey="accuracy" radius={[0, 6, 6, 0]} barSize={28}>
+                <Bar dataKey="accuracy" radius={[0, 6, 6, 0]} barSize={28} label={renderAccuracyLabel}>
                   {accuracyData.map((entry, index) => (
                     <Cell 
                       key={`cell-${index}`} 
@@ -1215,6 +1274,17 @@ export default function ForecastingDashboard() {
                   {cumulativeErrorData.map((entry, index) => (
                     <Cell key={`cell-cumerr-${index}`} fill={entry.color} opacity={0.85} />
                   ))}
+                  <LabelList 
+                    dataKey="error" 
+                    position="right" 
+                    formatter={(v) => formatCurrency(v)}
+                    style={{ 
+                      fill: '#1a1a1a', 
+                      fontSize: 12, 
+                      fontWeight: 600,
+                      fontFamily: "'DM Mono', monospace"
+                    }}
+                  />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
