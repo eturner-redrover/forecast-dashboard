@@ -619,11 +619,25 @@ export default function ForecastingDashboard() {
     return false;
   };
 
+  // Helper to check if a date falls within a selected month abbreviation (e.g., Oct)
+  const isDateInMonth = (date, monthAbbr) => {
+    const monthAbbrToNum = {
+      Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
+      Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12
+    };
+    const month = parseInt(date.split('/')[0], 10);
+    return month === monthAbbrToNum[monthAbbr];
+  };
+
   const availablePeriods = getAvailablePeriods();
 
   const getChartData = () => {
     return rawData
       .filter(row => {
+        // For month view with a specific month selected, filter to that month
+        if (view === 'month' && selectedPeriod !== 'all') {
+          return isDateInMonth(row.date, selectedPeriod);
+        }
         // For quarter view with a specific quarter selected, filter to that quarter's months
         if (view === 'quarter' && selectedPeriod !== 'all') {
           return isDateInQuarter(row.date, selectedPeriod);
