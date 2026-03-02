@@ -134,12 +134,13 @@ const LoginScreen = ({ onLogin }) => {
   );
 };
 
-const forecasters = ['Jeremy', 'Rachel', 'Carolyn', 'Dani', 'Eric'];
+const forecasters = ['Jeremy', 'Rachel', 'Carolyn', 'Dani', 'Allison', 'Eric'];
 const colors = {
   Jeremy: '#ff5555',
   Rachel: '#3574e3', 
   Carolyn: '#ffcc01',
   Dani: '#9dcdc0',
+  Allison: '#8b5cf6',
   Eric: '#6DA34D',
   Actual: '#1a1a1a'
 };
@@ -186,6 +187,8 @@ const parseCSV = (csvText) => {
 
 // Transform CSV data into the format expected by the dashboard
 const transformData = (csvData) => {
+  const normalizeKey = (key) => (key || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+
   return csvData.map(row => {
     const parseNum = (val) => {
       if (!val || val === '' || val === 'null') return null;
@@ -193,6 +196,24 @@ const transformData = (csvData) => {
       const cleaned = val.replace(/[,$"\s]/g, '');
       const num = parseFloat(cleaned);
       return isNaN(num) ? null : num;
+    };
+
+    const normalizedRow = Object.entries(row).reduce((acc, [key, value]) => {
+      acc[normalizeKey(key)] = value;
+      return acc;
+    }, {});
+
+    const getField = (...aliases) => {
+      for (const alias of aliases) {
+        if (Object.prototype.hasOwnProperty.call(row, alias)) return row[alias];
+      }
+      for (const alias of aliases) {
+        const normalizedAlias = normalizeKey(alias);
+        if (Object.prototype.hasOwnProperty.call(normalizedRow, normalizedAlias)) {
+          return normalizedRow[normalizedAlias];
+        }
+      }
+      return '';
     };
     
     // Parse date - convert "10/10/2025" to "10/10" for display
@@ -205,39 +226,24 @@ const transformData = (csvData) => {
       return val;
     };
     
-    return {
-      date: parseDate(row.date || row.Date),
-      Jeremy: {
-        month: parseNum(row.Jeremy_month),
-        quarter: parseNum(row.Jeremy_quarter),
-        year: parseNum(row.Jeremy_year)
-      },
-      Rachel: {
-        month: parseNum(row.Rachel_month),
-        quarter: parseNum(row.Rachel_quarter),
-        year: parseNum(row.Rachel_year)
-      },
-      Carolyn: {
-        month: parseNum(row.Carolyn_month),
-        quarter: parseNum(row.Carolyn_quarter),
-        year: parseNum(row.Carolyn_year)
-      },
-      Dani: {
-        month: parseNum(row.Dani_month),
-        quarter: parseNum(row.Dani_quarter),
-        year: parseNum(row.Dani_year)
-      },
-      Eric: {
-        month: parseNum(row.Eric_month),
-        quarter: parseNum(row.Eric_quarter),
-        year: parseNum(row.Eric_year)
-      },
+    const transformedRow = {
+      date: parseDate(getField('Date Guessed', 'Date', 'date')),
       actual: {
-        month: parseNum(row.actual_month),
-        quarter: parseNum(row.actual_quarter),
-        year: parseNum(row.actual_year)
+        month: parseNum(getField('Month Actual', 'actual_month')),
+        quarter: parseNum(getField('Quarter Actual', 'actual_quarter')),
+        year: parseNum(getField('Year Actual', 'actual_year'))
       }
     };
+
+    forecasters.forEach((name) => {
+      transformedRow[name] = {
+        month: parseNum(getField(`${name} Month`, `${name}_month`)),
+        quarter: parseNum(getField(`${name} Quarter`, `${name}_quarter`)),
+        year: parseNum(getField(`${name} Year`, `${name}_year`))
+      };
+    });
+
+    return transformedRow;
   });
 };
 
@@ -1038,89 +1044,6 @@ export default function ForecastingDashboard() {
           )}
         </div>
 
-
-        {/* Forecast Trends Chart */}
-        <ChartWrapper filename={`${viewLabels[view]}-forecast-trends-${new Date().toISOString().split('T')[0]}`}>
-        <div style={{
-          background: 'white',
-          borderRadius: '24px',
-          padding: '40px',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)'
-        }}>
-          <div style={{ marginBottom: '32px' }}>
-            <h2 style={{
-              fontFamily: "'Playfair Display', serif",
-              fontSize: '28px',
-              fontWeight: 600,
-              color: '#1a1a1a',
-              margin: 0
-            }}>
-              {viewLabels[view]} Forecast Evolution
-            </h2>
-            <p style={{ color: '#888', marginTop: '8px', fontSize: '14px' }}>
-              How predictions evolved week over week
-            </p>
-          </div>
-
-          <ResponsiveContainer width="100%" height={450}>
-            <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-              <defs>
-                {Object.entries(colors).map(([name, color]) => (
-                  <linearGradient key={name} id={`gradient-${name}`} x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor={color} stopOpacity={0.8} />
-                    <stop offset="100%" stopColor={color} stopOpacity={1} />
-                  </linearGradient>
-                ))}
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis 
-                dataKey="date" 
-                tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}
-                axisLine={{ stroke: '#e0e0e0' }}
-                tickLine={false}
-              />
-              <YAxis 
-                tickFormatter={formatCurrency}
-                tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Mono', monospace" }}
-                axisLine={false}
-                tickLine={false}
-                width={80}
-                domain={yAxisDomain}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend 
-                wrapperStyle={{ 
-                  paddingTop: '24px',
-                  fontFamily: "'DM Sans', sans-serif"
-                }}
-                iconType="circle"
-              />
-              {forecasters.map(name => (
-                <Line
-                  key={name}
-                  type="monotone"
-                  dataKey={name}
-                  stroke={colors[name]}
-                  strokeWidth={2.5}
-                  dot={{ fill: colors[name], strokeWidth: 0, r: 4 }}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
-                  connectNulls={false}
-                />
-              ))}
-              <Line
-                type="monotone"
-                dataKey="Actual"
-                stroke={colors.Actual}
-                strokeWidth={4}
-                strokeDasharray="8 4"
-                dot={{ fill: colors.Actual, strokeWidth: 2, stroke: 'white', r: 6 }}
-                activeDot={{ r: 8, strokeWidth: 2, stroke: 'white' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        </ChartWrapper>
-
         {/* Accuracy and Cumulative Error - Side by Side */}
         <div style={{
           display: 'grid',
@@ -1291,6 +1214,88 @@ export default function ForecastingDashboard() {
           </div>
           </ChartWrapper>
         </div>
+
+        {/* Forecast Trends Chart */}
+        <ChartWrapper filename={`${viewLabels[view]}-forecast-trends-${new Date().toISOString().split('T')[0]}`}>
+        <div style={{
+          background: 'white',
+          borderRadius: '24px',
+          padding: '40px',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.06)'
+        }}>
+          <div style={{ marginBottom: '32px' }}>
+            <h2 style={{
+              fontFamily: "'Playfair Display', serif",
+              fontSize: '28px',
+              fontWeight: 600,
+              color: '#1a1a1a',
+              margin: 0
+            }}>
+              {viewLabels[view]} Forecast Evolution
+            </h2>
+            <p style={{ color: '#888', marginTop: '8px', fontSize: '14px' }}>
+              How predictions evolved week over week
+            </p>
+          </div>
+
+          <ResponsiveContainer width="100%" height={450}>
+            <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <defs>
+                {Object.entries(colors).map(([name, color]) => (
+                  <linearGradient key={name} id={`gradient-${name}`} x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor={color} stopOpacity={0.8} />
+                    <stop offset="100%" stopColor={color} stopOpacity={1} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis 
+                dataKey="date" 
+                tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Sans', sans-serif" }}
+                axisLine={{ stroke: '#e0e0e0' }}
+                tickLine={false}
+              />
+              <YAxis 
+                tickFormatter={formatCurrency}
+                tick={{ fill: '#888', fontSize: 12, fontFamily: "'DM Mono', monospace" }}
+                axisLine={false}
+                tickLine={false}
+                width={80}
+                domain={yAxisDomain}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend 
+                wrapperStyle={{ 
+                  paddingTop: '24px',
+                  fontFamily: "'DM Sans', sans-serif"
+                }}
+                iconType="circle"
+              />
+              {forecasters.map(name => (
+                <Line
+                  key={name}
+                  type="monotone"
+                  dataKey={name}
+                  stroke={colors[name]}
+                  strokeWidth={2.5}
+                  dot={{ fill: colors[name], strokeWidth: 0, r: 4 }}
+                  activeDot={{ r: 6, strokeWidth: 0 }}
+                  connectNulls={false}
+                />
+              ))}
+              <Line
+                type="monotone"
+                dataKey="Actual"
+                stroke={colors.Actual}
+                strokeWidth={4}
+                strokeDasharray="8 4"
+                dot={{ fill: colors.Actual, strokeWidth: 2, stroke: 'white', r: 6 }}
+                activeDot={{ r: 8, strokeWidth: 2, stroke: 'white' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        </ChartWrapper>
         {/* Legend Card */}
         <div style={{
           background: 'white',
